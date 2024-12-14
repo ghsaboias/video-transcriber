@@ -1,4 +1,29 @@
-whisper.cpp
-.venv
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+.venv/
 .env
-outputs
+
+# Build and Distribution
+build/
+dist/
+*.egg-info/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Project specific
+outputs/
+temp_audio.wav
+whisper.cpp/
+*.wav
+
+# Logs
+*.log

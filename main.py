@@ -135,7 +135,7 @@ def summarize_transcript(text: str) -> str:
         
         response = client.messages.create(
             model="claude-3-haiku-20240307",
-            max_tokens=3000,
+            max_tokens=6000,
             system="You are a helpful assistant that summarizes video transcripts. You are given a transcript of a video and you are tasked with summarizing the key points of the video. You reply with just the summary, without any introduction.",
             messages=[
                 {

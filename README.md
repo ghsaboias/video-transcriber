@@ -2,7 +2,7 @@
 
 ## Demo:
 
-https://github.com/user-attachments/assets/e86031fa-a5b2-402a-b300-61c757a05241
+Uploading Screen Recording 2025-01-15 at 14.31.48.mp4…
 
 A Python tool that locally transcribes YouTube videos using whisper.cpp and generates summaries using Claude AI.
 

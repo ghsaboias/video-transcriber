@@ -1,8 +1,8 @@
 # Video Transcriber
 
+## Demo:
 
-https://github.com/user-attachments/assets/e9b37d29-98fa-4ce9-b5b4-0fd02f19c1d7
-
+https://github.com/user-attachments/assets/e86031fa-a5b2-402a-b300-61c757a05241
 
 A Python tool that locally transcribes YouTube videos using whisper.cpp and generates summaries using Claude AI.
 

@@ -160,7 +160,7 @@ def summarize_transcript(text: str) -> str:
 
 def review_summary(summary: str) -> str:
     """
-    Review the summary and provide feedback
+    Improve the summary
     """
     chat_completion = client.chat.completions.create(
         messages=[
@@ -170,7 +170,7 @@ def review_summary(summary: str) -> str:
             },
             {
                 "role": "user",
-                "content": "Rewrite the following summary and provide feedback: " + summary,
+                "content": "Improve the following summary: " + summary,
             },
             {
                 "role": "assistant",

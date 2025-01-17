@@ -5,10 +5,11 @@ from typing import Optional
 import sys
 import re
 from anthropic import Anthropic
-from datetime import datetime
-import json
 import os
 from groq import Groq
+from dotenv import load_dotenv
+
+load_dotenv()
 
 client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
 

@@ -1,6 +1,5 @@
 import yt_dlp
 import subprocess
-import os
 from pathlib import Path
 from typing import Optional
 import sys
@@ -8,6 +7,10 @@ import re
 from anthropic import Anthropic
 from datetime import datetime
 import json
+import os
+from groq import Groq
+
+client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
 
 def download_audio(url: str, output_path: str = "temp_audio.wav") -> str:
     """
@@ -148,12 +151,36 @@ def summarize_transcript(text: str) -> str:
                 }
             ]
         )
-        
+        review_summary(response.content[0].text)
         return response.content[0].text
         
     except Exception as e:
         print(f"Error during summarization: {str(e)}")
         return "Failed to generate summary."
+
+def review_summary(summary: str) -> str:
+    """
+    Review the summary and provide feedback
+    """
+    chat_completion = client.chat.completions.create(
+        messages=[
+            {
+                "role": "system",
+                "content": "You are an expert at proofreading and improving summaries. You are given a summary of a transcript and you are tasked with improving the summary with the goal of increasing     clarity, completeness, and accuracy, correcting names of places and people, and any other relevant aspects. You reply with just the rewritten summary, without any introduction."
+            },
+            {
+                "role": "user",
+                "content": "Rewrite the following summary and provide feedback: " + summary,
+            },
+            {
+                "role": "assistant",
+                "content": "1. "
+            }
+        ],
+        model="llama-3.3-70b-versatile",
+    )
+
+    return chat_completion.choices[0].message.content
 
 def check_whisper_setup() -> bool:
     """
@@ -249,7 +276,7 @@ def generate_output_filename(url: str) -> str:
     
     return title
 
-def save_outputs(transcript: str, summary: str, base_filename: str):
+def save_outputs(transcript: str, reviewed_summary: str, base_filename: str):
     """
     Save transcript and summary to their respective directories
     """
@@ -261,7 +288,7 @@ def save_outputs(transcript: str, summary: str, base_filename: str):
     # Save summary
     summary_path = f"outputs/summaries/{base_filename}.txt"
     with open(summary_path, "w", encoding="utf-8") as f:
-        f.write(summary)
+        f.write(reviewed_summary)
     
     return transcript_path, summary_path
 
@@ -308,9 +335,16 @@ def main():
             # Generate summary
             print("\nGenerating summary...")
             summary = summarize_transcript(cleaned_transcript)
+
+            # Review summary
+            print("\nReviewing summary...")
+            reviewed_summary = review_summary(summary)
+
+            # Re-add '1. ' to the summary
+            reviewed_summary = "1. " + reviewed_summary
                 
             # Save outputs
-            transcript_path, summary_path = save_outputs(cleaned_transcript, summary, base_filename)
+            transcript_path, summary_path = save_outputs(cleaned_transcript,reviewed_summary, base_filename)
             
             print(f"\nTranscription saved to {transcript_path}")
             print(f"Summary saved to {summary_path}")

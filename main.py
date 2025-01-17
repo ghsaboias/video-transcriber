@@ -127,20 +127,21 @@ def summarize_transcript(text: str) -> str:
         client = Anthropic(
             api_key=os.environ.get("ANTHROPIC_API_KEY"),
         )
-        
-        prompt = f"""Please provide a concise summary of this transcript.
 
-        <transcript>
+        system = """You are an expert at distilling key ideas from spoken content. Your summaries focus on the core concepts, arguments, and insights, presenting them as standalone ideas rather than referring to their source medium. You reply with just the summary, without any introduction."""
+
+        prompt = f"""Please provide a concise summary of these ideas.
+
+        <content>
         {text}
-        </transcript>
+        </content>
 
-        Collect key points and topics of the transcript. Focus on the most important, most relevant, and most interesting points.
-        """
+        Extract and synthesize the key arguments, concepts, and insights. Focus on the most important, relevant, and interesting points, presenting them as standalone ideas."""
         
         response = client.messages.create(
             model="claude-3-5-sonnet-20240620",
             max_tokens=2000,
-            system="You are an expert at summarizing transcripts. You are given a transcript of a video and you are tasked with summarizing the key points of the video. You reply with just the summary, without any introduction. You provide a comprehensive summary of the transcript, including the most important, most relevant, and most interesting points.",
+            system=system,
             messages=[
                 {
                     "role": "assistant",
@@ -167,7 +168,7 @@ def review_summary(summary: str) -> str:
         messages=[
             {
                 "role": "system",
-                "content": "You are an expert at proofreading and improving summaries. You are given a summary of a transcript and you are tasked with improving the summary with the goal of increasing     clarity, completeness, and accuracy, correcting names of places and people, and any other relevant aspects. You reply with just the rewritten summary, without any introduction."
+                "content": "You are an expert at proofreading and improving summaries. You are given a summary of a transcript and you are tasked with improving the summary with the goal of increasing clarity, completeness, and accuracy, correcting names of places and people, and any other relevant aspects. You reply with just the rewritten summary, without any introduction."
             },
             {
                 "role": "user",

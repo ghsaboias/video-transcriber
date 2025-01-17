@@ -130,14 +130,18 @@ def summarize_transcript(text: str) -> str:
         {text}
         </transcript>
 
-        Your response should be the summary, without introductory text like "Here is the summary of the transcript:".
+        Collect key points and topics of the transcript. Focus on the most important, most relevant, and most interesting points.
         """
         
         response = client.messages.create(
-            model="claude-3-haiku-20240307",
+            model="claude-3-5-sonnet-20240620",
             max_tokens=2000,
-            system="You are a helpful assistant that summarizes video transcripts. You are given a transcript of a video and you are tasked with summarizing the key points of the video. You reply with just the summary, without any introduction.",
+            system="You are an expert at summarizing transcripts. You are given a transcript of a video and you are tasked with summarizing the key points of the video. You reply with just the summary, without any introduction. You provide a comprehensive summary of the transcript, including the most important, most relevant, and most interesting points.",
             messages=[
+                {
+                    "role": "assistant",
+                    "content": "1. "
+                },
                 {
                     "role": "user",
                     "content": prompt

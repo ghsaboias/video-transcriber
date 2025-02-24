@@ -7,23 +7,51 @@ __pycache__/
 env/
 .venv/
 .env
+.python-version
+*.pyc
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
 
 # Build and Distribution
 build/
 dist/
 *.egg-info/
+*.egg
 
-# IDE
+# IDE and Editors
 .idea/
 .vscode/
 *.swp
 *.swo
+*.sublime-workspace
+*.sublime-project
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
 
 # Project specific
 outputs/
 temp_audio.wav
 whisper.cpp/
 *.wav
+uv.lock
 
-# Logs
+# Logs and temporary files
 *.log
+.tmp/
+tmp/
+temp/
+.cache/
+
+# Virtual Environment
+venv/
+ENV/
+.repomix-output.txt
+
+# Cursor rules
+.cursorrules

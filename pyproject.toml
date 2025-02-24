@@ -1,0 +1,14 @@
+[project]
+name = "video-transcriber"
+version = "0.1.0"
+description = "A Python tool that locally transcribes YouTube videos using whisper.cpp and generates summaries using AI"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "openai>=1.64.0",
+    "yt-dlp>=2024.0.0",
+    "anthropic>=0.18.0",
+]
+
+[project.license]
+text = "MIT"

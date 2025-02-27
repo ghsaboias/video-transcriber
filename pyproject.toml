@@ -6,8 +6,10 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "openai>=1.64.0",
-    "yt-dlp>=2024.0.0",
-    "anthropic>=0.18.0",
+    "yt-dlp>=2025.2.19",
+    "groq>=0.18.0",
+    "python-dotenv>=1.0.1",
+    "anthropic>=0.46.0",
 ]
 
 [project.license]

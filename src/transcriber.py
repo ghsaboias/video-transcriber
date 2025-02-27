@@ -4,7 +4,7 @@ import subprocess
 import os
 from pathlib import Path
 from typing import Optional
-from config import WHISPER_MODELS
+from src.config import WHISPER_MODELS
 
 
 def transcribe_audio(
@@ -102,7 +102,7 @@ def check_whisper_setup(model_name: str, english_only: bool = False) -> bool:
     if not whisper_dir.exists():
         return False
 
-    # Check if model exists
+    # Check if model exists and is valid
     model_info = WHISPER_MODELS[model_name]
     model_type = "english_only" if english_only else "multilingual"
     model_filename = (
@@ -110,7 +110,23 @@ def check_whisper_setup(model_name: str, english_only: bool = False) -> bool:
         if isinstance(model_info[model_type], dict)
         else model_info[model_type]
     )
-    if not (whisper_dir / f"models/ggml-{model_filename}.bin").exists():
+    model_path = whisper_dir / f"models/ggml-{model_filename}.bin"
+
+    # Check if model exists and has a reasonable size
+    if not model_path.exists():
+        return False
+
+    # Get expected size from config
+    expected_size_mb = model_info["size_mb"]
+    actual_size_mb = model_path.stat().st_size / (1024 * 1024)
+
+    # If the model file is significantly smaller than expected (allowing 10% margin),
+    # consider it corrupted and trigger a redownload
+    if actual_size_mb < expected_size_mb * 0.9:
+        print(
+            f"Model file appears corrupted (size: {actual_size_mb:.1f}MB, expected: {expected_size_mb}MB)"
+        )
+        model_path.unlink()  # Delete corrupted model
         return False
 
     # Check if executable exists
@@ -144,6 +160,55 @@ def setup_whisper(model_name: str, english_only: bool = False):
         # Change to whisper directory
         os.chdir(whisper_dir)
 
+        # Ensure models directory exists
+        models_dir = Path("models")
+        models_dir.mkdir(exist_ok=True)
+
+        # Check if download script exists, if not create it
+        download_script = models_dir / "download-ggml-model.sh"
+        if not download_script.exists():
+            print("Creating model download script...")
+            download_script_content = """#!/bin/bash
+
+# Whisper model download script
+
+if [ "$#" -ne 1 ]; then
+    echo "Usage: $0 <model>"
+    exit 1
+fi
+
+model=$1
+
+# Hugging Face model map
+declare -A model_map
+model_map["tiny.en"]="ggml-tiny.en.bin"
+model_map["tiny"]="ggml-tiny.bin"
+model_map["base.en"]="ggml-base.en.bin"
+model_map["base"]="ggml-base.bin"
+model_map["small.en"]="ggml-small.en.bin"
+model_map["small"]="ggml-small.bin"
+model_map["medium.en"]="ggml-medium.en.bin"
+model_map["medium"]="ggml-medium.bin"
+model_map["large-v3"]="ggml-large-v3.bin"
+
+# Check if model exists in map
+if [ -z "${model_map[$model]}" ]; then
+    echo "Invalid model: $model"
+    echo "Available models: ${!model_map[@]}"
+    exit 1
+fi
+
+# Download model
+echo "Downloading ggml model $model from 'https://huggingface.co/ggerganov/whisper.cpp' ..."
+wget --quiet --show-progress -O models/ggml-$model.bin https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-$model.bin"""
+
+            # Write the script
+            with open(download_script, "w") as f:
+                f.write(download_script_content)
+
+            # Make the script executable
+            download_script.chmod(0o755)
+
         # Determine model filename
         model_info = WHISPER_MODELS[model_name]
         model_type = "english_only" if english_only else "multilingual"
@@ -153,36 +218,49 @@ def setup_whisper(model_name: str, english_only: bool = False):
             else model_info[model_type]
         )
 
-        # Download model if not exists
+        # Download model if not exists or is corrupted
         model_path = Path(f"models/ggml-{model_filename}.bin")
         if not model_path.exists():
             print(f"Downloading whisper model {model_filename}...")
             subprocess.run(
-                ["sh", "./models/download-ggml-model.sh", model_filename], check=True
+                ["bash", "./models/download-ggml-model.sh", model_filename], check=True
             )
 
-        # Build the project with static linking
-        if not Path("build/bin/main").exists():
-            print("Building whisper.cpp...")
-            # Create build directory
-            Path("build").mkdir(exist_ok=True)
+            # Verify the downloaded model
+            if not model_path.exists():
+                raise RuntimeError(f"Failed to download model {model_filename}")
 
-            # Configure CMake with static library
-            subprocess.run(
-                [
-                    "cmake",
-                    "-B",
-                    "build",
-                    "-DBUILD_SHARED_LIBS=OFF",
-                    "-DCMAKE_BUILD_TYPE=Release",
-                ],
-                check=True,
-            )
+            actual_size_mb = model_path.stat().st_size / (1024 * 1024)
+            expected_size_mb = model_info["size_mb"]
 
-            # Build the project
-            subprocess.run(
-                ["cmake", "--build", "build", "--config", "Release"], check=True
-            )
+            if actual_size_mb < expected_size_mb * 0.9:
+                raise RuntimeError(
+                    f"Downloaded model appears corrupted (size: {actual_size_mb:.1f}MB, expected: {expected_size_mb}MB)"
+                )
 
+        # Build the project
+        print("Building whisper.cpp...")
+        # Create build directory
+        Path("build").mkdir(exist_ok=True)
+
+        # Configure CMake
+        subprocess.run(
+            [
+                "cmake",
+                "-B",
+                "build",
+                "-DCMAKE_BUILD_TYPE=Release",
+            ],
+            check=True,
+        )
+
+        # Build the project
+        subprocess.run(
+            ["cmake", "--build", "build", "--config", "Release", "-j"], check=True
+        )
+
+    except Exception as e:
+        print(f"Error during whisper.cpp setup: {str(e)}")
+        raise
     finally:
         os.chdir(original_dir)

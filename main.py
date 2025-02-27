@@ -5,6 +5,7 @@ from typing import Optional, Tuple
 import sys
 import re
 import os
+import argparse
 from openai import OpenAI
 from groq import Groq
 from dotenv import load_dotenv
@@ -24,6 +25,7 @@ PROVIDERS_AND_MODELS = {
             ("Claude 2", "anthropic/claude-2"),
             ("GPT-3.5 Turbo", "openai/gpt-3.5-turbo"),
             ("Gemini Flash 2.0", "google/gemini-2.0-flash-001"),
+            ("Gemini Pro 2.0 Experimental", "google/gemini-2.0-pro-exp-02-05:free"),
         ],
     },
     "groq": {
@@ -424,67 +426,185 @@ def select_provider_and_model(role: str) -> Tuple[str, str]:
     return selected_provider, selected_model
 
 
+def summarize_from_file(
+    file_path: str, provider: str = "openrouter", model: Optional[str] = None
+) -> str:
+    """
+    Read a transcript from a file and generate a summary
+    """
+    try:
+        with open(file_path, "r", encoding="utf-8") as f:
+            transcript = f.read()
+
+        # Clean the transcript
+        cleaned_transcript = clean_transcript(transcript)
+
+        # Generate summary
+        summary = summarize_text(cleaned_transcript, provider, model)
+
+        return summary
+    except Exception as e:
+        print(f"Error processing transcript file: {str(e)}")
+        return None
+
+
+def generate_output_filename_from_path(file_path: str) -> str:
+    """
+    Generate a filename from the input transcript file path
+    """
+    # Get the base name without extension
+    base_name = Path(file_path).stem
+    # Clean the name to make it filesystem-friendly
+    clean_name = re.sub(r"[^\w\s-]", "", base_name).strip()
+    # Replace spaces with underscores and limit length
+    clean_name = re.sub(r"\s+", "_", clean_name)[:100]
+    return clean_name
+
+
+def list_available_transcripts() -> list:
+    """
+    List all available transcripts in the outputs/transcripts directory
+    Returns a list of transcript files
+    """
+    transcript_dir = Path("outputs/transcripts")
+    if not transcript_dir.exists():
+        return []
+
+    transcripts = list(transcript_dir.glob("*.txt"))
+    return transcripts
+
+
+def select_transcript() -> Optional[str]:
+    """
+    Display available transcripts and let user select one
+    Returns the path to the selected transcript or None if no selection made
+    """
+    transcripts = list_available_transcripts()
+
+    if not transcripts:
+        print("No transcripts found in outputs/transcripts directory.")
+        return None
+
+    print("\nAvailable transcripts:")
+    for idx, transcript in enumerate(transcripts, start=1):
+        print(f"{idx}. {transcript.name}")
+
+    while True:
+        choice = input(
+            "\nEnter the number of the transcript to summarize (or 'q' to quit): "
+        )
+        if choice.lower() == "q":
+            return None
+        if choice.isdigit() and 1 <= int(choice) <= len(transcripts):
+            return str(transcripts[int(choice) - 1])
+        print("Invalid selection. Please try again.")
+
+
 def main():
     try:
         # Create output directories
         create_output_directories()
 
-        # Check and setup whisper.cpp if needed
-        if not check_whisper_setup():
-            print("Whisper.cpp setup incomplete. Running setup...")
-            setup_whisper()
+        # Main menu
+        print("\nWelcome to Video Transcriber and Summarizer!")
+        print("What would you like to do?")
+        print("1. Process a YouTube video")
+        print("2. Summarize an existing transcript")
 
-        # Get YouTube URL from user
-        url = input("Enter YouTube URL: ")
+        while True:
+            choice = input("\nEnter your choice (1-2): ")
+            if choice in ["1", "2"]:
+                break
+            print("Invalid choice. Please enter 1 or 2.")
 
-        # Prompt for provider/model selections for summarization.
+        # Prompt for provider/model selections for summarization
         print("\nSelect configuration for summarization:")
         provider_summary, model_summary = select_provider_and_model("summarization")
 
-        # Generate base filename for outputs
-        base_filename = generate_output_filename(url)
+        if choice == "1":
+            # Process YouTube URL
+            while True:
+                url = input("\nEnter YouTube URL (or 'q' to quit): ")
+                if url.lower() == "q":
+                    return
+                if url.strip():
+                    break
+                print("Please enter a valid URL.")
 
-        # Initialize audio_path
-        audio_path = "temp_audio.wav"
+            # Check and setup whisper.cpp
+            if not check_whisper_setup():
+                print("Whisper.cpp setup incomplete. Running setup...")
+                setup_whisper()
 
-        try:
-            # Download audio
-            print("Downloading audio...")
-            audio_path = download_audio(url)
-            print(f"Audio downloaded to: {audio_path}")
+            base_filename = generate_output_filename(url)
+            audio_path = "temp_audio.wav"
 
-            # Verify file exists and size
-            if os.path.exists(audio_path):
-                size_mb = os.path.getsize(audio_path) / 1024 / 1024
-                print(f"Audio file size: {size_mb:.2f} MB")
+            try:
+                # Download and process audio
+                print("Downloading audio...")
+                audio_path = download_audio(url)
+                print(f"Audio downloaded to: {audio_path}")
 
-            # Transcribe audio
-            transcript = transcribe_audio(audio_path)
+                if os.path.exists(audio_path):
+                    size_mb = os.path.getsize(audio_path) / 1024 / 1024
+                    print(f"Audio file size: {size_mb:.2f} MB")
 
-            if not transcript:
-                print("Failed to get transcription")
+                # Transcribe audio
+                transcript = transcribe_audio(audio_path)
+
+                if not transcript:
+                    print("Failed to get transcription")
+                    return
+
+                # Clean up the transcript
+                cleaned_transcript = clean_transcript(transcript)
+
+                # Generate summary
+                summary = summarize_text(
+                    cleaned_transcript, provider_summary, model_summary
+                )
+
+                # Save outputs
+                transcript_path, summary_path = save_outputs(
+                    cleaned_transcript, summary, base_filename
+                )
+
+                print(f"\nTranscription saved to {transcript_path}")
+                print(f"Summary saved to {summary_path}")
+
+            finally:
+                # Clean up temporary audio file
+                if os.path.exists(audio_path):
+                    os.remove(audio_path)
+
+        else:  # choice == '2'
+            # Select and process existing transcript
+            transcript_path = select_transcript()
+            if not transcript_path:
+                print("No transcript selected. Exiting.")
                 return
 
-            # Clean up the transcript
-            cleaned_transcript = clean_transcript(transcript)
+            base_filename = generate_output_filename_from_path(transcript_path)
 
-            # Generate summary
-            summary = summarize_text(
-                cleaned_transcript, provider_summary, model_summary
+            # Generate summary from transcript
+            summary = summarize_from_file(
+                transcript_path, provider_summary, model_summary
             )
 
-            # Save outputs
-            transcript_path, summary_path = save_outputs(
-                cleaned_transcript, summary, base_filename
-            )
+            if summary:
+                # Read original transcript for saving
+                with open(transcript_path, "r", encoding="utf-8") as f:
+                    original_transcript = f.read()
 
-            print(f"\nTranscription saved to {transcript_path}")
-            print(f"Summary saved to {summary_path}")
+                # Save outputs
+                saved_transcript_path, summary_path = save_outputs(
+                    original_transcript, summary, base_filename
+                )
 
-        finally:
-            # Clean up temporary audio file
-            if os.path.exists(audio_path):
-                os.remove(audio_path)
+                print(f"\nTranscription saved to {saved_transcript_path}")
+                print(f"Summary saved to {summary_path}")
+            else:
+                print("Failed to generate summary from transcript")
 
     except Exception as e:
         print(f"An error occurred: {str(e)}")

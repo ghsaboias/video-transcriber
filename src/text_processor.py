@@ -77,7 +77,7 @@ def summarize_text(
             response = client.chat.completions.create(
                 model=model,
                 messages=[{"role": "user", "content": prompt}],
-                max_tokens=4000,
+                max_tokens=8000,
             )
 
             if not response:

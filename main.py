@@ -31,9 +31,9 @@ def main():
         # Get content source and language info
         source_type, is_english_content = select_content_source()
 
-        # Prompt for provider/model selections for summarization
-        print("\nSelect configuration for summarization:")
-        provider_summary, model_summary = select_provider_and_model("summarization")
+        transcript = None
+        base_filename = None
+        transcript_path = None
 
         if source_type == "youtube":
             # Process YouTube URL
@@ -48,15 +48,9 @@ def main():
             # Select Whisper model and language option
             model_name, is_english_model = select_whisper_model(is_english_content)
 
-            # Select summary language preference
-            use_english_summary = select_summary_language(
-                is_english_model, is_english_content
-            )
-
             print(f"Selected model: {model_name}")
             print(f"Is English model: {is_english_model}")
             print(f"Is English content: {is_english_content}")
-            print(f"Use English summary: {use_english_summary}")
 
             # Check and setup whisper.cpp
             if not check_whisper_setup(model_name, is_english_model):
@@ -87,24 +81,16 @@ def main():
                     return
 
                 # Clean up the transcript
-                cleaned_transcript = clean_transcript(transcript)
+                transcript = clean_transcript(transcript)
 
-                # Generate summary
-                print("\nGenerating summary...")
-                summary = summarize_text(
-                    cleaned_transcript,
-                    provider_summary,
-                    model_summary,
-                    use_english_summary,
+                # Save transcript immediately
+                transcript_path = os.path.join(
+                    "outputs", "transcripts", f"{base_filename}.txt"
                 )
-
-                # Save outputs
-                transcript_path, summary_path = save_outputs(
-                    cleaned_transcript, summary, base_filename
-                )
-
+                os.makedirs(os.path.dirname(transcript_path), exist_ok=True)
+                with open(transcript_path, "w", encoding="utf-8") as f:
+                    f.write(transcript)
                 print(f"\nTranscription saved to {transcript_path}")
-                print(f"Summary saved to {summary_path}")
 
             finally:
                 # Clean up temporary audio file
@@ -118,30 +104,67 @@ def main():
                 print("No transcript selected. Exiting.")
                 return
 
-            # Pass the correct is_english_content value from earlier
-            use_english_summary = select_summary_language(False, is_english_content)
-
             base_filename = generate_output_filename_from_path(transcript_path)
 
-            # Generate summary from transcript
-            summary = summarize_from_file(
-                transcript_path, provider_summary, model_summary, use_english_summary
+            # Read the transcript
+            with open(transcript_path, "r", encoding="utf-8") as f:
+                transcript = f.read()
+
+        if transcript and transcript_path:
+            # Only ask about summary generation for YouTube videos
+            summarize_choice = "1"  # Default to yes for transcript source
+            if source_type == "youtube":
+                while True:
+                    summarize_choice = input(
+                        "\nWould you like to generate a summary?\n1. Yes\n2. No\nEnter your choice: "
+                    ).lower()
+                    if summarize_choice in ["1", "2"]:
+                        break
+                    print("Please enter '1' for yes or '2' for no.")
+
+            if summarize_choice == "2":
+                print("\nSkipping summary generation. Your transcript is ready!")
+                return
+
+            # Now that we have the transcript and user wants a summary, configure summarization
+            print("\nSelect configuration for summarization:")
+            provider_summary, model_summary = select_provider_and_model("summarization")
+
+            # Select summary language preference
+            use_english_summary = select_summary_language(
+                is_english_model if source_type == "youtube" else False,
+                is_english_content,
+            )
+
+            # Generate summary
+            print("\nGenerating summary...")
+            summary = (
+                summarize_text(
+                    transcript,
+                    provider_summary,
+                    model_summary,
+                    use_english_summary,
+                )
+                if source_type == "youtube"
+                else summarize_from_file(
+                    transcript_path,
+                    provider_summary,
+                    model_summary,
+                    use_english_summary,
+                )
             )
 
             if summary:
-                # Read original transcript for saving
-                with open(transcript_path, "r", encoding="utf-8") as f:
-                    original_transcript = f.read()
-
-                # Save outputs
-                saved_transcript_path, summary_path = save_outputs(
-                    original_transcript, summary, base_filename
+                # Save summary
+                summary_path = os.path.join(
+                    "outputs", "summaries", f"{base_filename}_summary.txt"
                 )
-
-                print(f"\nTranscription saved to {saved_transcript_path}")
+                os.makedirs(os.path.dirname(summary_path), exist_ok=True)
+                with open(summary_path, "w", encoding="utf-8") as f:
+                    f.write(summary)
                 print(f"Summary saved to {summary_path}")
             else:
-                print("Failed to generate summary from transcript")
+                print("Failed to generate summary")
 
     except KeyboardInterrupt:
         print("\nOperation cancelled by user.")

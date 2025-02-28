@@ -4,9 +4,11 @@ PROVIDERS_AND_MODELS = {
     "openrouter": {
         "display": "OpenRouter",
         "summary_models": [
+            ("Sonnet 3.7", "anthropic/claude-3.7-sonnet"),
             ("Claude 3 Opus", "anthropic/claude-3-opus-20240229"),
             ("Claude 3 Sonnet", "anthropic/claude-3-sonnet-20240229"),
             ("GPT-4 Turbo", "openai/gpt-4-turbo-preview"),
+            ("GPT-4o-mini", "openai/gpt-4o-mini"),
             ("Mixtral 8x7B", "mistralai/mixtral-8x7b"),
             ("Llama 2 70B", "meta-llama/llama-2-70b-chat"),
             ("Claude 2", "anthropic/claude-2"),

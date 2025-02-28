@@ -8,11 +8,11 @@ import re
 
 def create_output_directories():
     """
-    Create directories for storing transcripts and summaries
+    Create directories for storing transcripts and overviews
     """
     Path("outputs").mkdir(exist_ok=True)
     Path("outputs/transcripts").mkdir(exist_ok=True)
-    Path("outputs/summaries").mkdir(exist_ok=True)
+    Path("outputs/overviews").mkdir(exist_ok=True)
 
 
 def get_video_info(url: str) -> dict:
@@ -67,21 +67,21 @@ def generate_output_filename_from_path(file_path: str) -> str:
     return clean_name
 
 
-def save_outputs(transcript: str, reviewed_summary: str, base_filename: str):
+def save_outputs(transcript: str, detailed_overview: str, base_filename: str):
     """
-    Save transcript and summary to their respective directories
+    Save transcript and detailed overview to their respective directories
     """
     # Save transcript
     transcript_path = f"outputs/transcripts/{base_filename}.txt"
     with open(transcript_path, "w", encoding="utf-8") as f:
         f.write(transcript)
 
-    # Save summary
-    summary_path = f"outputs/summaries/{base_filename}.txt"
-    with open(summary_path, "w", encoding="utf-8") as f:
-        f.write(reviewed_summary)
+    # Save detailed overview
+    overview_path = f"outputs/overviews/{base_filename}_overview.txt"
+    with open(overview_path, "w", encoding="utf-8") as f:
+        f.write(detailed_overview)
 
-    return transcript_path, summary_path
+    return transcript_path, overview_path
 
 
 def list_available_transcripts() -> list:

@@ -1,4 +1,4 @@
-"""This module contains functions for processing text, including cleaning transcripts and generating summaries."""
+"""This module contains functions for processing text, including cleaning transcripts and generating detailed overviews."""
 
 import re
 import os
@@ -30,30 +30,52 @@ def clean_transcript(text: str) -> str:
     return cleaned
 
 
-def summarize_text(
+def strip_introductory_text(overview: str) -> str:
+    """
+    Strip introductory text from overview if the first line doesn't end with "**".
+    This removes common phrases like "Here's a structured overview..." that models sometimes include.
+    """
+    lines = overview.split("\n")
+
+    # If there's at least one line and it doesn't end with "**" (markdown bold)
+    if lines and not lines[0].strip().endswith("**"):
+        # Remove the first line
+        return "\n".join(lines[1:]).strip()
+
+    return overview
+
+
+def generate_detailed_overview(
     text: str,
     provider: str = "openrouter",
     model: Optional[str] = None,
     use_english: bool = True,
 ) -> str:
     """
-    Summarize text using the selected provider and model.
-    If use_english is False, the summary will be in the same language as the input text.
+    Generate a detailed overview of text using the selected provider and model.
+    If use_english is False, the overview will be in the same language as the input text.
+    Metadata (channel name and video title) is extracted from the transcript if available.
     """
     language_instruction = (
         ""
         if use_english
-        else ", keep the summary in the same language of the input text (do NOT translate to English!)"
+        else ", keep the overview in the same language of the input text (do NOT translate to English!)"
     )
-    prompt = f"""Summarize the provided transcript in a professional tone{language_instruction}. Structure the summary in 3 sections with the following purposes, using bolded headings:
-    1. A concise statement of the content’s primary focus, purpose, or subject matter, avoiding specific details or data.
-    2. An outline of the most significant facts, events, or elements presented, including relevant specifics such as individuals, locations, or figures, in precise and objective language.
-    3. A highlight of the content’s broader impact, practical utility, or significance, including potential effects, insights, or value to an audience as applicable; if none are evident, a brief summary of the central theme or purpose.
 
-    Maintain a formal and concise style, focusing solely on the content. Do NOT reference the transcript as a source, and do NOT include introductory text like 'Here is the transcript:' or 'Here is the summary:', provide just the summary. Transcript:
+    prompt = f"""Generate a detailed overview of the provided text in a professional tone{language_instruction}. Structure the overview in 3 sections with the following purposes, using bolded headings:
+    1. A concise statement of the content's core focus or thesis, capturing its primary intent or subject matter without delving into specifics.
+    2. A comprehensive outline of key insights, facts, events, predictions, or takeaways, blending concrete details (e.g., current developments, specific examples) and speculative elements (e.g., future implications, forecasts) as present. Include relevant specifics such as individuals, technologies, or figures, using subheadings or bullet points for clarity and emphasis on actionable or noteworthy points.
+    3. A summary of the content's stated broader implications, relevance, or practical utility as presented, focusing on its significance for decision-making, societal impact, or intellectual value across relevant domains (e.g., technology, geopolitics), reflecting only the perspectives or conclusions offered in the text.
+
+    Scale the overview's length proportionally to the input, targeting 300-600 words unless the content warrants more.
+
+    Output just the overview, do NOT reference the text as a source, do NOT include 'Here is a structured overview of the text:'. Text:
+
     {text}"""
 
-    print(f"Starting summarization with {provider} (model: {model or 'default'})...")
+    print(
+        f"Starting detailed overview generation with {provider} (model: {model or 'default'})..."
+    )
 
     if provider.lower() == "openrouter":
         if model is None:
@@ -88,17 +110,18 @@ def summarize_text(
                     f"Invalid response format from OpenRouter API: {response}"
                 )
 
-            summary = response.choices[0].message.content.strip()
-            print("Summarization completed successfully.")
+            overview = response.choices[0].message.content.strip()
         except ValueError as ve:
             print(f"Configuration error: {str(ve)}")
-            summary = "Failed to generate summary: Configuration error"
+            overview = "Failed to generate detailed overview: Configuration error"
         except Exception as e:
-            print(f"Error during summarization with OpenRouter: {str(e)}")
+            print(
+                f"Error during detailed overview generation with OpenRouter: {str(e)}"
+            )
             print(
                 f"Response received: {response if 'response' in locals() else 'No response'}"
             )
-            summary = "Failed to generate summary: API error"
+            overview = "Failed to generate detailed overview: API error"
     elif provider.lower() == "groq":
         if model is None:
             model = "llama-3.3-70b-versatile"
@@ -113,30 +136,31 @@ def summarize_text(
                 ],
                 max_completion_tokens=4000,
             )
-            summary = response.choices[0].message.content.strip()
+            overview = response.choices[0].message.content.strip()
             if "deepseek" in model.lower():
-                summary = re.sub(
-                    r"<\s*think\s*>.*?<\s*/\s*think\s*>", "", summary, flags=re.DOTALL
+                overview = re.sub(
+                    r"<\s*think\s*>.*?<\s*/\s*think\s*>", "", overview, flags=re.DOTALL
                 ).strip()
-            print("Summarization completed.")
+            print("Detailed overview generation completed.")
         except Exception as e:
-            print(f"Error during summarization with Groq: {str(e)}")
-            summary = "Failed to generate summary."
+            print(f"Error during detailed overview generation with Groq: {str(e)}")
+            overview = "Failed to generate detailed overview."
     else:
-        print("Unknown summarization provider specified.")
-        summary = "Failed to generate summary."
+        print("Unknown provider specified.")
+        overview = "Failed to generate detailed overview."
 
-    return summary
+    # Strip any introductory text before returning
+    return strip_introductory_text(overview)
 
 
-def summarize_from_file(
+def generate_overview_from_file(
     file_path: str,
     provider: str = "openrouter",
     model: Optional[str] = None,
     use_english: bool = True,
 ) -> str:
     """
-    Read a transcript from a file and generate a summary
+    Read a transcript from a file and generate a detailed overview
     """
     try:
         with open(file_path, "r", encoding="utf-8") as f:
@@ -145,10 +169,17 @@ def summarize_from_file(
         # Clean the transcript
         cleaned_transcript = clean_transcript(transcript)
 
-        # Generate summary
-        summary = summarize_text(cleaned_transcript, provider, model, use_english)
+        # Generate detailed overview
+        overview = generate_detailed_overview(
+            cleaned_transcript, provider, model, use_english
+        )
 
-        return summary
+        return overview
     except Exception as e:
         print(f"Error processing transcript file: {str(e)}")
         return None
+
+
+# For backward compatibility
+summarize_text = generate_detailed_overview
+summarize_from_file = generate_overview_from_file

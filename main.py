@@ -8,17 +8,22 @@ from src.utils import (
     generate_output_filename,
     save_outputs,
     generate_output_filename_from_path,
+    get_video_info,
 )
 from src.user_interface import (
     select_content_source,
     select_provider_and_model,
     select_whisper_model,
     select_transcript,
-    select_summary_language,
+    select_overview_language,
 )
 from src.audio_downloader import download_audio
 from src.transcriber import transcribe_audio, check_whisper_setup, setup_whisper
-from src.text_processor import clean_transcript, summarize_text, summarize_from_file
+from src.text_processor import (
+    clean_transcript,
+    generate_detailed_overview,
+    generate_overview_from_file,
+)
 
 load_dotenv()
 
@@ -34,6 +39,7 @@ def main():
         transcript = None
         base_filename = None
         transcript_path = None
+        metadata_string = ""  # Initialize metadata_string with a default empty value
 
         if source_type == "youtube":
             # Process YouTube URL
@@ -44,6 +50,30 @@ def main():
                 if url.strip():
                     break
                 print("Please enter a valid URL.")
+
+            # Get video metadata for the detailed overview
+            video_info = get_video_info(url)
+            channel_name = "Unknown Channel"
+            video_title = "Untitled Video"
+
+            if video_info:
+                # Extract channel name with fallbacks, defaulting to "Unknown Channel" if all are None
+                temp_channel = video_info.get(
+                    "channel", video_info.get("uploader", None)
+                )
+                if temp_channel:
+                    channel_name = temp_channel
+
+                # Extract video title, defaulting to "Untitled Video" if None
+                temp_title = video_info.get("title", None)
+                if temp_title:
+                    video_title = temp_title
+
+                print(f"Video metadata retrieved: {channel_name} - {video_title}")
+            else:
+                print("Could not retrieve video metadata, using default values")
+
+            metadata_string = f"Channel: {channel_name}\nVideo Title: {video_title}\n\n"
 
             # Select Whisper model and language option
             model_name, is_english_model = select_whisper_model(is_english_content)
@@ -110,61 +140,104 @@ def main():
             with open(transcript_path, "r", encoding="utf-8") as f:
                 transcript = f.read()
 
+            # Extract metadata from transcript file
+            # Assuming first line is channel name and second line is video title
+            lines = transcript.split("\n")
+            if len(lines) >= 2:
+                # Check if the first line starts with "Channel:" and second with "Video Title:"
+                if lines[0].startswith("Channel:") and lines[1].startswith(
+                    "Video Title:"
+                ):
+                    channel_line = lines[0]
+                    title_line = lines[1]
+                    metadata_string = f"{channel_line}\n{title_line}\n\n"
+                    print(
+                        f"Extracted metadata from transcript: {channel_line} - {title_line}"
+                    )
+                else:
+                    print(
+                        "Transcript doesn't contain expected metadata format in first two lines"
+                    )
+                    metadata_string = ""
+            else:
+                print("Transcript doesn't have enough lines to contain metadata")
+                metadata_string = ""
+
         if transcript and transcript_path:
-            # Only ask about summary generation for YouTube videos
-            summarize_choice = "1"  # Default to yes for transcript source
+            # Only ask about detailed overview generation for YouTube videos
+            overview_choice = "1"  # Default to yes for transcript source
             if source_type == "youtube":
                 while True:
-                    summarize_choice = input(
-                        "\nWould you like to generate a summary?\n1. Yes\n2. No\nEnter your choice: "
+                    overview_choice = input(
+                        "\nWould you like to generate a detailed overview?\n1. Yes\n2. No\nEnter your choice: "
                     ).lower()
-                    if summarize_choice in ["1", "2"]:
+                    if overview_choice in ["1", "2"]:
                         break
                     print("Please enter '1' for yes or '2' for no.")
 
-            if summarize_choice == "2":
-                print("\nSkipping summary generation. Your transcript is ready!")
+            if overview_choice == "2":
+                # Add metadata at the beginning of the script
+                transcript = metadata_string + transcript
+                with open(transcript_path, "w", encoding="utf-8") as f:
+                    f.write(transcript)
+                print(
+                    "\nSkipping detailed overview generation. Your transcript is ready!"
+                )
                 return
 
-            # Now that we have the transcript and user wants a summary, configure summarization
-            print("\nSelect configuration for summarization:")
-            provider_summary, model_summary = select_provider_and_model("summarization")
+            # Now that we have the transcript and user wants a detailed overview, configure generation
+            print("\nSelect configuration for detailed overview generation:")
+            provider_overview, model_overview = select_provider_and_model(
+                "detailed_overview"
+            )
 
-            # Select summary language preference
-            use_english_summary = select_summary_language(
+            # Select overview language preference
+            use_english_overview = select_overview_language(
                 is_english_model if source_type == "youtube" else False,
                 is_english_content,
             )
 
-            # Generate summary
-            print("\nGenerating summary...")
-            summary = (
-                summarize_text(
-                    transcript,
-                    provider_summary,
-                    model_summary,
-                    use_english_summary,
+            # Generate detailed overview
+            print("\nGenerating detailed overview...")
+            overview = (
+                generate_detailed_overview(
+                    transcript, provider_overview, model_overview, use_english_overview
                 )
                 if source_type == "youtube"
-                else summarize_from_file(
+                else generate_overview_from_file(
                     transcript_path,
-                    provider_summary,
-                    model_summary,
-                    use_english_summary,
+                    provider_overview,
+                    model_overview,
+                    use_english_overview,
                 )
             )
 
-            if summary:
-                # Save summary
-                summary_path = os.path.join(
-                    "outputs", "summaries", f"{base_filename}_summary.txt"
+            # Add channel name and video title to the transcript
+            # Only add metadata if it exists (for YouTube source)
+            if metadata_string and source_type == "youtube":
+                transcript = metadata_string + transcript
+                with open(transcript_path, "w", encoding="utf-8") as f:
+                    f.write(transcript)
+                print(
+                    f"Transcript updated with channel name and video title: {transcript_path}"
                 )
-                os.makedirs(os.path.dirname(summary_path), exist_ok=True)
-                with open(summary_path, "w", encoding="utf-8") as f:
-                    f.write(summary)
-                print(f"Summary saved to {summary_path}")
+
+            if overview:
+                # Add channel name and video title to the overview
+                # Only add metadata if it exists
+                if metadata_string:
+                    overview = metadata_string + overview
+
+                # Save detailed overview
+                overview_path = os.path.join(
+                    "outputs", "overviews", f"{base_filename}_overview.txt"
+                )
+                os.makedirs(os.path.dirname(overview_path), exist_ok=True)
+                with open(overview_path, "w", encoding="utf-8") as f:
+                    f.write(overview)
+                print(f"Detailed overview saved to {overview_path}")
             else:
-                print("Failed to generate summary")
+                print("Failed to generate detailed overview")
 
     except KeyboardInterrupt:
         print("\nOperation cancelled by user.")

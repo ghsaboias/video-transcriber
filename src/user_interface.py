@@ -12,10 +12,10 @@ def select_content_source() -> Tuple[str, bool]:
     - source_type is "youtube" or "transcript"
     - is_english is True if content is in English, False otherwise
     """
-    print("\nWelcome to Video Transcriber and Summarizer!")
+    print("\nWelcome to Video Transcriber and Detailed Overview Generator!")
     print("What would you like to do?")
     print("1. Process a YouTube video")
-    print("2. Summarize an existing transcript")
+    print("2. Generate a detailed overview of an existing transcript")
 
     while True:
         choice = input("\nEnter your choice (1-2): ")
@@ -42,7 +42,7 @@ def select_content_source() -> Tuple[str, bool]:
 def select_provider_and_model(role: str) -> Tuple[str, str]:
     """
     Prompt the user to select a provider and a model for the given role.
-    Role can be 'summarization' or 'summary review'.
+    Role can be 'detailed_overview' or 'overview_review'.
     Returns a tuple of (provider, model).
     """
     print(f"\nSelect provider for {role}:")
@@ -117,7 +117,7 @@ def select_transcript() -> Optional[str]:
 
     while True:
         choice = input(
-            "\nEnter the number of the transcript to summarize (or 'q' to quit): "
+            "\nEnter the number of the transcript to generate a detailed overview (or 'q' to quit): "
         )
         if choice.lower() == "q":
             return None
@@ -126,30 +126,36 @@ def select_transcript() -> Optional[str]:
         print("Invalid selection. Please try again.")
 
 
-def select_summary_language(
+def select_overview_language(
     is_english_model: bool, is_english_content: bool = False
 ) -> bool:
     """
-    Determine the language for the summary.
+    Determine the language for the detailed overview.
     Returns True for English, False for original language.
     """
     if is_english_model:
         print(
-            "\nSince you selected an English-only model, the summary will be in English."
+            "\nSince you selected an English-only model, the detailed overview will be in English."
         )
         return True
 
     if is_english_content:
-        print("\nSince the content is in English, the summary will be in English.")
+        print(
+            "\nSince the content is in English, the detailed overview will be in English."
+        )
         return True
 
     # Only ask for non-English content with multilingual models
     while True:
         choice = input(
-            "\nWould you like the summary in English or the original language?\n1. English\n2. Original language\nEnter your choice: "
+            "\nWould you like the detailed overview in English or the original language?\n1. English\n2. Original language\nEnter your choice: "
         ).lower()
         if choice in ["1", "2"]:
             return choice == "1"
         print(
             "Invalid choice. Please enter '1' for English or '2' for original language."
         )
+
+
+# For backward compatibility
+select_summary_language = select_overview_language

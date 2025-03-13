@@ -55,3 +55,15 @@ ENV/
 
 # Cursor rules
 .cursorrules
+
+# Package-specific lock files
+poetry.lock
+Pipfile.lock
+
+# Local configuration
+*.local.conf
+.env.local
+
+# Data folders
+audio/
+text_files/

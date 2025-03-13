@@ -5,12 +5,19 @@ description = "A Python tool that locally transcribes YouTube videos using whisp
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-    "openai>=1.64.0",
     "yt-dlp>=2025.2.19",
     "groq>=0.18.0",
-    "python-dotenv>=1.0.1",
-    "anthropic>=0.46.0",
+    "pathlib>=1.0.1",
+    "ffmpeg-python>=0.2.0",  # Required for audio processing with yt-dlp
 ]
+
+[build-system]
+requires = ["setuptools>=42", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = []
+py-modules = ["main"]
 
 [project.license]
 text = "MIT"

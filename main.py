@@ -1,89 +1,74 @@
-from groq import Groq
+from groq import Groq, AsyncGroq
 import yt_dlp
 from pathlib import Path
 import re
 import os
 from dotenv import load_dotenv
 import subprocess
-from concurrent.futures import ThreadPoolExecutor
 from tqdm import tqdm
+import time
+import psutil
+import sys
+import gc
+import asyncio
 
 load_dotenv()
 
-# Initialize Groq client
 client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
+async_client = AsyncGroq(api_key=os.environ.get("GROQ_API_KEY"))
 
-# Pricing data for Whisper models (per hour transcribed, minimum 10s)
 WHISPER_PRICING = {
-    "whisper-large-v3": 0.111,  # $0.111/hr
-    "whisper-large-v3-turbo": 0.04,  # $0.04/hr
-    "distil-whisper-large-v3-en": 0.02,  # $0.02/hr
+    "whisper-large-v3": 0.111,
+    "whisper-large-v3-turbo": 0.04,
+    "distil-whisper-large-v3-en": 0.02,
 }
 
-# Pricing data for chat model (per million tokens)
 CHAT_PRICING = {
-    "llama-3.3-70b-versatile": {
-        "input": 0.59,
-        "output": 0.79,
-    }  # $0.59/M input, $0.79/M output
+    "llama-3.3-70b-versatile": {"input": 0.59, "output": 0.79},
 }
 
 
-# Function to calculate transcription cost
+def get_performance_metrics():
+    process = psutil.Process(os.getpid())
+    memory_mb = process.memory_info().rss / 1024 / 1024
+    cpu_percent = process.cpu_percent(interval=None)
+    return memory_mb, cpu_percent
+
+
 def calculate_transcription_cost(model, duration_seconds):
-    price_per_hour = WHISPER_PRICING.get(
-        model, 0.02
-    )  # Default to Distil-Whisper if unknown
-    duration_hours = max(duration_seconds, 10) / 3600  # Minimum 10s charge
-    cost = price_per_hour * duration_hours
-    return cost
+    price_per_hour = WHISPER_PRICING.get(model, 0.02)
+    duration_hours = max(duration_seconds, 10) / 3600
+    return price_per_hour * duration_hours
 
 
-# Function to calculate chat cost
 def calculate_chat_cost(model, prompt_tokens, completion_tokens):
-    pricing = CHAT_PRICING.get(
-        model, {"input": 0.59, "output": 0.79}
-    )  # Default to Llama 3.3
+    pricing = CHAT_PRICING.get(model, {"input": 0.59, "output": 0.79})
     input_cost = (prompt_tokens / 1_000_000) * pricing["input"]
     output_cost = (completion_tokens / 1_000_000) * pricing["output"]
     return input_cost + output_cost
 
 
-# Function to stream and process YouTube audio
 def stream_youtube_audio(url, output_path="audio/output.mp3"):
+    start_time = time.time()
     Path(output_path).parent.mkdir(exist_ok=True)
     try:
-        command = [
-            "yt-dlp",
-            url,
-            "-o",
-            "-",
-            "--quiet",
-            "--format",
-            "bestaudio/best",
-            "|",
-            "ffmpeg",
-            "-i",
-            "pipe:0",
-            "-ar",
-            "16000",
-            "-ac",
-            "1",
-            "-b:a",
-            "32k",
-            "-f",
-            "mp3",
-            output_path,
-            "-y",
-        ]
-        subprocess.run(" ".join(command), shell=True, check=True, capture_output=True)
+        command = (
+            f"yt-dlp {url} -o - --quiet --format bestaudio/best | "
+            f"ffmpeg -i pipe:0 -ar 16000 -ac 1 -b:a 16k -af silenceremove=1:0:-40dB -threads 2 -f mp3 {output_path} -y"
+        )
+        subprocess.run(command, shell=True, check=True, capture_output=True)
+        elapsed_time = time.time() - start_time
+        memory_mb, cpu_percent = get_performance_metrics()
+        print(
+            f"Streaming Metrics: Time: {elapsed_time:.2f}s, Memory: {memory_mb:.2f}MB, CPU: {cpu_percent:.1f}%"
+        )
+        gc.collect()
         return output_path
     except subprocess.CalledProcessError as e:
         print(f"Error streaming audio: {e.stderr.decode()}")
         return None
 
 
-# Function to get audio duration
 def get_audio_duration(audio_path):
     result = subprocess.run(
         ["ffmpeg", "-i", audio_path, "-hide_banner"],
@@ -98,8 +83,8 @@ def get_audio_duration(audio_path):
     return None
 
 
-# Function to split audio into chunks
 def split_audio_into_chunks(audio_path, chunk_size_mb=25):
+    start_time = time.time()
     chunk_dir = Path("audio/chunks")
     chunk_dir.mkdir(exist_ok=True, parents=True)
     base_name = os.path.basename(audio_path).replace(".mp3", "")
@@ -112,7 +97,7 @@ def split_audio_into_chunks(audio_path, chunk_size_mb=25):
         return None
 
     chunk_duration = (chunk_size_mb / file_size_mb) * duration
-    chunk_duration = max(min(chunk_duration, 600), 60)  # 1-10 min
+    chunk_duration = max(min(chunk_duration, 600), 60)
 
     try:
         subprocess.run(
@@ -138,14 +123,21 @@ def split_audio_into_chunks(audio_path, chunk_size_mb=25):
             check=True,
             capture_output=True,
         )
-        return sorted(chunk_dir.glob(f"{base_name}_chunk*.mp3"))
+        chunks = sorted(chunk_dir.glob(f"{base_name}_chunk*.mp3"))
+        elapsed_time = time.time() - start_time
+        memory_mb, cpu_percent = get_performance_metrics()
+        print(
+            f"Chunking Metrics: Time: {elapsed_time:.2f}s, Memory: {memory_mb:.2f}MB, CPU: {cpu_percent:.1f}%, Chunks: {len(chunks)}"
+        )
+        gc.collect()
+        return chunks
     except subprocess.CalledProcessError as e:
         print(f"Error splitting audio: {e.stderr.decode()}")
         return None
 
 
-# Function to transcribe audio with verbose_json and cost
-def transcribe_audio(audio_path, model="distil-whisper-large-v3-en"):
+async def async_transcribe_audio(audio_path, model="distil-whisper-large-v3-en"):
+    start_time = time.time()
     try:
         duration = get_audio_duration(audio_path)
         if not duration:
@@ -153,7 +145,7 @@ def transcribe_audio(audio_path, model="distil-whisper-large-v3-en"):
             duration = 10
 
         with open(audio_path, "rb") as audio_file:
-            response = client.audio.transcriptions.create(
+            response = await async_client.audio.transcriptions.create(
                 file=(os.path.basename(audio_path), audio_file.read()),
                 model=model,
                 response_format="verbose_json",
@@ -161,48 +153,56 @@ def transcribe_audio(audio_path, model="distil-whisper-large-v3-en"):
             transcription = response.text
             token_count = sum(len(segment["tokens"]) for segment in response.segments)
             cost = calculate_transcription_cost(model, duration)
+            elapsed_time = time.time() - start_time
+            memory_mb, cpu_percent = get_performance_metrics()
             print(f"\nToken Usage for {audio_path}:")
             print(f"Estimated tokens: {token_count}")
             print(f"Segment count: {len(response.segments)}")
             print(f"Duration: {duration:.1f}s")
             print(f"Cost: ${cost:.4f}")
+            print(
+                f"Transcription Metrics: Time: {elapsed_time:.2f}s, Memory: {memory_mb:.2f}MB, CPU: {cpu_percent:.1f}%"
+            )
+            gc.collect()
             return transcription, token_count, cost
     except Exception as e:
         print(f"Error transcribing audio: {e}")
         return None, 0, 0
 
 
-# Function to transcribe chunks in parallel
-def transcribe_chunks(chunk_paths, model="distil-whisper-large-v3-en"):
+async def transcribe_chunks(chunk_paths, model="distil-whisper-large-v3-en"):
+    start_time = time.time()
     transcriptions = []
     total_tokens = 0
     total_cost = 0
 
-    def transcribe_single_chunk(chunk_path):
-        transcription, token_count, cost = transcribe_audio(chunk_path, model)
+    async def transcribe_single_chunk(chunk_path):
+        transcription, token_count, cost = await async_transcribe_audio(
+            chunk_path, model
+        )
         os.remove(chunk_path)
         return transcription, token_count, cost
 
-    with ThreadPoolExecutor(max_workers=4) as executor:
-        results = list(
-            tqdm(
-                executor.map(transcribe_single_chunk, chunk_paths),
-                total=len(chunk_paths),
-                desc="Transcribing chunks",
-            )
-        )
-        for transcription, token_count, cost in results:
-            if transcription:
-                transcriptions.append(transcription)
-                total_tokens += token_count
-                total_cost += cost
+    tasks = [transcribe_single_chunk(chunk_path) for chunk_path in chunk_paths]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
 
+    for result in results:
+        if isinstance(result, tuple) and result[0]:
+            transcriptions.append(result[0])
+            total_tokens += result[1]
+            total_cost += result[2]
+
+    elapsed_time = time.time() - start_time
+    memory_mb, cpu_percent = get_performance_metrics()
     print(f"\nTotal Estimated Token Usage for All Chunks: {total_tokens}")
     print(f"Total Cost for All Chunks: ${total_cost:.4f}")
+    print(
+        f"Chunk Transcription Metrics: Time: {elapsed_time:.2f}s, Memory: {memory_mb:.2f}MB, CPU: {cpu_percent:.1f}%"
+    )
+    gc.collect()
     return " ".join(transcriptions)
 
 
-# Function to select a text file
 def select_text_file():
     text_dir = Path("text_files")
     text_dir.mkdir(exist_ok=True)
@@ -232,7 +232,6 @@ def select_text_file():
     return str(file_path)
 
 
-# Function to read text file
 def read_text_file(file_path):
     try:
         with open(file_path, "r", encoding="utf-8") as text_file:
@@ -242,8 +241,8 @@ def read_text_file(file_path):
         return None
 
 
-# Function to get content based on mode
-def get_content(mode):
+async def get_content(mode):
+    overall_start_time = time.time()
     if mode == "video":
         youtube_url = input("Enter YouTube video URL: ")
         print("Streaming and processing audio...")
@@ -256,7 +255,7 @@ def get_content(mode):
 
         if file_size_mb <= 25:
             print("Transcribing audio...")
-            content, _, _ = transcribe_audio(audio_path)
+            content, _, _ = await async_transcribe_audio(audio_path)
             os.remove(audio_path)
         else:
             print("Splitting audio into chunks...")
@@ -264,7 +263,7 @@ def get_content(mode):
             os.remove(audio_path)
             if not chunks:
                 return None
-            content = transcribe_chunks(chunks)
+            content = await transcribe_chunks(chunks)
 
         if not content:
             print("Failed to transcribe audio.")
@@ -276,7 +275,13 @@ def get_content(mode):
         file_path = text_dir / filename
         with open(file_path, "w", encoding="utf-8") as f:
             f.write(content)
+        elapsed_time = time.time() - overall_start_time
+        memory_mb, cpu_percent = get_performance_metrics()
         print(f"\nTranscription saved to: {file_path}")
+        print(
+            f"Overall Video Processing Metrics: Time: {elapsed_time:.2f}s, Memory: {memory_mb:.2f}MB, CPU: {cpu_percent:.1f}%"
+        )
+        gc.collect()
         return content
 
     elif mode == "text":
@@ -287,64 +292,80 @@ def get_content(mode):
         if not content:
             print("Text file is empty or failed to read.")
             return "No content available."
+        elapsed_time = time.time() - overall_start_time
+        memory_mb, cpu_percent = get_performance_metrics()
+        print(
+            f"Overall Text Processing Metrics: Time: {elapsed_time:.2f}s, Memory: {memory_mb:.2f}MB, CPU: {cpu_percent:.1f}%"
+        )
+        gc.collect()
         return content
     return None
 
 
-# Function to chat with persistent context and token tracking
 def chat_session(content, mode):
     source_type = "video transcription" if mode == "video" else "text file content"
     print(f"\nChat session started. Ask questions about the {source_type}!")
     print("Type 'exit' to end the session.\n")
 
-    system_prompt = f"""You are an assistant designed to help users explore and understand content from a {source_type}. 
-    The content has been provided to you (see below). Your role is to answer questions, provide summaries, extract key points, 
-    or assist with any tasks related to this content. If the user asks something unrelated, politely redirect them to the 
-    provided {source_type}. Here is the content to work with:\n\n{content}"""
+    system_prompt = f"I’m here to help with this {source_type}: {content}\nAsk me anything about it."
 
     messages = [
         {"role": "system", "content": system_prompt},
-        {
-            "role": "user",
-            "content": "Understood. I'm ready to ask questions about the content.",
-        },
     ]
     chat_model = "llama-3.3-70b-versatile"
+    total_chat_time = 0
+    total_chat_cost = 0
+    chat_interactions = 0
 
     while True:
         user_input = input("You: ").strip()
         if user_input.lower() == "exit":
             print("Chat session ended.")
+            if chat_interactions > 0:
+                avg_chat_time = total_chat_time / chat_interactions
+                print(
+                    f"Chat Session Summary: Interactions: {chat_interactions}, Total Cost: ${total_chat_cost:.6f}, Avg Time per Interaction: {avg_chat_time:.2f}s"
+                )
+            gc.collect()
             break
 
         messages.append({"role": "user", "content": user_input})
 
         try:
+            start_time = time.time()
             response = client.chat.completions.create(
                 model=chat_model, messages=messages, max_tokens=500
             )
             assistant_response = response.choices[0].message.content
-            print(f"Assistant: {assistant_response}\n")
+            elapsed_time = time.time() - start_time
+            memory_mb, cpu_percent = get_performance_metrics()
 
+            print(f"Assistant: {assistant_response}\n")
             if hasattr(response, "usage"):
                 usage = response.usage
                 cost = calculate_chat_cost(
                     chat_model, usage.prompt_tokens, usage.completion_tokens
                 )
+                total_chat_time += elapsed_time
+                total_chat_cost += cost
+                chat_interactions += 1
                 print("Token Usage for this message:")
                 print(f"Prompt tokens: {usage.prompt_tokens}")
                 print(f"Completion tokens: {usage.completion_tokens}")
                 print(f"Total tokens: {usage.total_tokens}")
                 print(f"Total time: {usage.total_time:.3f}s")
-                print(f"Cost: ${cost:.6f}\n")
+                print(f"Cost: ${cost:.6f}")
+                print(
+                    f"Chat Metrics: Time: {elapsed_time:.2f}s, Memory: {memory_mb:.2f}MB, CPU: {cpu_percent:.1f}%\n"
+                )
 
             messages.append({"role": "assistant", "content": assistant_response})
+            gc.collect()
         except Exception as e:
             print(f"Error in chat response: {e}\n")
 
 
-# Main function
-def main():
+async def main():
     print("Choose a mode:")
     print("1. Chat with a YouTube video (transcribes audio)")
     print("2. Chat with a text file")
@@ -355,7 +376,7 @@ def main():
         print("Invalid choice. Exiting.")
         return
 
-    content = get_content(mode)
+    content = await get_content(mode)
     if content is None:
         print("Failed to obtain content. Exiting.")
         return
@@ -367,4 +388,4 @@ if __name__ == "__main__":
     if not os.environ.get("GROQ_API_KEY"):
         print("Please set your GROQ_API_KEY environment variable.")
     else:
-        main()
+        asyncio.run(main())

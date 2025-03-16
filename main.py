@@ -334,7 +334,7 @@ def chat_session(content, mode):
         try:
             start_time = time.time()
             response = client.chat.completions.create(
-                model=chat_model, messages=messages, max_tokens=500
+                model=chat_model, messages=messages, max_tokens=1000
             )
             assistant_response = response.choices[0].message.content
             elapsed_time = time.time() - start_time

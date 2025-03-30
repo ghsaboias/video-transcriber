@@ -8,7 +8,8 @@ dependencies = [
     "yt-dlp>=2025.2.19",
     "groq>=0.18.0",
     "pathlib>=1.0.1",
-    "ffmpeg-python>=0.2.0",  # Required for audio processing with yt-dlp
+    "ffmpeg-python>=0.2.0", # Required for audio processing with yt-dlp
+    "openai>=1.69.0",
 ]
 
 [build-system]

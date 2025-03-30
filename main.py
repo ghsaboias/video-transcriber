@@ -11,11 +11,16 @@ import psutil
 import sys
 import gc
 import asyncio
+from openai import OpenAI
 
 load_dotenv()
 
 client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
 async_client = AsyncGroq(api_key=os.environ.get("GROQ_API_KEY"))
+open_router_client = OpenAI(
+    base_url="https://openrouter.ai/api/v1",
+    api_key=os.environ.get("OPENROUTER_API_KEY"),
+)
 
 WHISPER_PRICING = {
     "whisper-large-v3": 0.111,
@@ -25,6 +30,10 @@ WHISPER_PRICING = {
 
 CHAT_PRICING = {
     "llama-3.3-70b-versatile": {"input": 0.59, "output": 0.79},
+    "google/gemini-2.5-pro-exp-03-25": {
+        "input": 0.00,
+        "output": 0.00,
+    },  # Free during experimental phase
 }
 
 
@@ -302,20 +311,35 @@ async def get_content(mode):
     return None
 
 
+def select_chat_model():
+    print("\nSelect chat model:")
+    print("1. Groq (llama-3.3-70b-versatile)")
+    print("2. OpenRouter (google/gemini-2.5-pro-exp-03-25)")
+    choice = input("Enter 1 or 2: ").strip()
+
+    if choice == "1":
+        return "groq", "llama-3.3-70b-versatile"
+    elif choice == "2":
+        return "openrouter", "google/gemini-2.5-pro-exp-03-25:free"
+    else:
+        print("Invalid choice. Defaulting to Groq.")
+        return "groq", "llama-3.3-70b-versatile"
+
+
 def chat_session(content, mode):
     source_type = "video transcription" if mode == "video" else "text file content"
     print(f"\nChat session started. Ask questions about the {source_type}!")
     print("Type 'exit' to end the session.\n")
 
-    system_prompt = f"I’m here to help with this {source_type}: {content}\nAsk me anything about it."
+    system_prompt = f"You are here to help with this {source_type}: {content}\nAnswer questions about it using factual information obtained from the video. Do not infer, speculate or guess. If the information is not explicit, be careful with using it. Be careful with roles and relationships mentioned in the text, and only provide information that is directly stated."
 
-    messages = [
-        {"role": "system", "content": system_prompt},
-    ]
-    chat_model = "llama-3.3-70b-versatile"
+    provider, chat_model = select_chat_model()
     total_chat_time = 0
     total_chat_cost = 0
     chat_interactions = 0
+
+    # Initialize messages list for Groq
+    messages = [{"role": "system", "content": system_prompt}]
 
     while True:
         user_input = input("You: ").strip()
@@ -333,9 +357,22 @@ def chat_session(content, mode):
 
         try:
             start_time = time.time()
-            response = client.chat.completions.create(
-                model=chat_model, messages=messages, max_tokens=1000
-            )
+
+            if provider == "groq":
+                response = client.chat.completions.create(
+                    model=chat_model, messages=messages, max_tokens=1000
+                )
+            else:  # openrouter
+                response = open_router_client.chat.completions.create(
+                    model=chat_model,
+                    messages=messages,
+                    max_tokens=1000,
+                    extra_headers={
+                        "HTTP-Referer": "http://localhost:3000",
+                        "X-Title": "Video Transcriber",
+                    },
+                )
+
             assistant_response = response.choices[0].message.content
             elapsed_time = time.time() - start_time
             memory_mb, cpu_percent = get_performance_metrics()
@@ -353,7 +390,7 @@ def chat_session(content, mode):
                 print(f"Prompt tokens: {usage.prompt_tokens}")
                 print(f"Completion tokens: {usage.completion_tokens}")
                 print(f"Total tokens: {usage.total_tokens}")
-                print(f"Total time: {usage.total_time:.3f}s")
+                # print(f"Total time: {usage.total_time:.3f}s")
                 print(f"Cost: ${cost:.6f}")
                 print(
                     f"Chat Metrics: Time: {elapsed_time:.2f}s, Memory: {memory_mb:.2f}MB, CPU: {cpu_percent:.1f}%\n"
@@ -387,5 +424,7 @@ async def main():
 if __name__ == "__main__":
     if not os.environ.get("GROQ_API_KEY"):
         print("Please set your GROQ_API_KEY environment variable.")
+    elif not os.environ.get("OPENROUTER_API_KEY"):
+        print("Please set your OPENROUTER_API_KEY environment variable.")
     else:
         asyncio.run(main())

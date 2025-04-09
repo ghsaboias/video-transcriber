@@ -360,13 +360,12 @@ def chat_session(content, mode):
 
             if provider == "groq":
                 response = client.chat.completions.create(
-                    model=chat_model, messages=messages, max_tokens=1000
+                    model=chat_model, messages=messages
                 )
             else:  # openrouter
                 response = open_router_client.chat.completions.create(
                     model=chat_model,
                     messages=messages,
-                    max_tokens=1000,
                     extra_headers={
                         "HTTP-Referer": "http://localhost:3000",
                         "X-Title": "Video Transcriber",

@@ -250,6 +250,17 @@ def read_text_file(file_path):
         return None
 
 
+async def get_video_title(youtube_url):
+    ydl_opts = {
+        "quiet": True,
+        "no_warnings": True,
+        "extract_audio": False,
+    }
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        result = ydl.extract_info(youtube_url, download=False)
+        return result.get("title", "Unknown Title")
+
+
 async def get_content(mode):
     overall_start_time = time.time()
     if mode == "video":
@@ -280,8 +291,8 @@ async def get_content(mode):
 
         text_dir = Path("text_files")
         text_dir.mkdir(exist_ok=True)
-        filename = f"transcript_{Path(audio_path).stem}.txt"
-        file_path = text_dir / filename
+        video_title = await get_video_title(youtube_url)
+        file_path = text_dir / f"{video_title[:20].replace(' ', '_').lower()}.txt"
         with open(file_path, "w", encoding="utf-8") as f:
             f.write(content)
         elapsed_time = time.time() - overall_start_time
